@@ -1,0 +1,10 @@
+streamlit
+pandas
+langgraph
+langchain-google-genai
+langchain-chroma
+chromadb
+PyGithub
+requests
+tenacity
+python-dotenv
