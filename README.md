@@ -26,9 +26,9 @@ flowchart TD
     subgraph Human_In_The_Loop ["Human-in-the-Loop & Publishing"]
         ConfidenceNode --> SlackCard["Slack Incoming Webhook (Alert Card)"]
         ConfidenceNode --> ApprovalGate{"Human Review Gate"}
-        ApprovalGate -->|Approve [A]| LivePost["PyGithub Comment Publisher"]
-        ApprovalGate -->|Reject [R]| MarkRejected["Set Status: REJECTED"]
-        ApprovalGate -->|Skip [S]| MarkSkip["Retain Status: NEW"]
+        ApprovalGate -->|Approve| LivePost["PyGithub Comment Publisher"]
+        ApprovalGate -->|Reject| MarkRejected["Set Status: REJECTED"]
+        ApprovalGate -->|Skip| MarkSkip["Retain Status: NEW"]
         LivePost --> LiveRepo["Target Repository"]
         LivePost --> MarkResolved["Set Status: RESOLVED"]
         MarkResolved --> DB_State
