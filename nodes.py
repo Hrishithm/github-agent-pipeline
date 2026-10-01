@@ -13,20 +13,27 @@ def call_llm_with_retry(llm, messages):
     return llm.invoke(messages)
 
 def extract_text(content) -> str:
-    """Handles newer Gemini models that return content as a list of blocks."""
+    """Handles response content whether it is a string or a list of blocks."""
+    if isinstance(content, str):
+        return content
     if isinstance(content, list):
-        return " ".join(
-            part.get("text", "") if isinstance(part, dict) else str(part)
-            for part in content
-        )
+        parts = []
+        for item in content:
+            if isinstance(item, dict):
+                parts.append(item.get("text", ""))
+            elif hasattr(item, "text"):
+                parts.append(str(item.text))
+            else:
+                parts.append(str(item))
+        return " ".join(parts)
     return str(content)
 
-# Initialize Gemini LLM
+# Initialize Gemini LLM using gemini-3.6-flash with a 60s timeout
 api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 llm = ChatGoogleGenerativeAI(
-    model="gemini-3.6-flash", 
-    temperature=0,
-    google_api_key=api_key
+    model="gemini-3.6-flash",
+    google_api_key=api_key,
+    timeout=60
 )
 
 # --- WORKER 1: CLASSIFY NODE ---
@@ -45,7 +52,6 @@ def classify_node(state: AgentState) -> dict:
 
     Respond ONLY with the category name.
     """
-    # Uses retry-protected wrapper
     response = call_llm_with_retry(llm, [HumanMessage(content=prompt)])
     category = extract_text(response.content).strip()
     logger.info(f"🏷️ [Classify] Category: {category}")
@@ -53,7 +59,7 @@ def classify_node(state: AgentState) -> dict:
 
 # --- WORKER 2: RETRIEVE NODE ---
 def retrieve_node(state: AgentState) -> dict:
-    """Fetches relevant FastAPI documentation chunks from ChromaDB."""
+    """Fetches relevant FastAPI documentation chunks via MCP server."""
     query = f"{state['title']} {state['body']}"
     docs = get_relevant_docs(query)
     logger.info(f"📚 [Retrieve] Found {len(docs)} context chunks.")
@@ -76,7 +82,6 @@ def draft_node(state: AgentState) -> dict:
 
     Write a helpful, professional markdown response.
     """
-    # Uses retry-protected wrapper
     response = call_llm_with_retry(llm, [HumanMessage(content=prompt)])
     draft = extract_text(response.content).strip()
     logger.info("📝 [Draft] Response created.")

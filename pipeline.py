@@ -2,7 +2,8 @@ import os
 import sqlite3
 import requests
 import traceback
-from github import Github
+import time
+from github import Auth, Github
 from dotenv import load_dotenv
 
 # Internal Project Modules
@@ -25,21 +26,31 @@ SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL")
 
 @api_retry
 def send_slack_alert(issue_number: int, title: str, category: str, confidence: float, draft: str):
-    """Sends a formatted Slack alert with automatic 3x retry exponential backoff."""
+    """Sends a richly formatted, categorized notification card to Slack."""
     if not SLACK_WEBHOOK_URL:
         logger.warning("⚠️ SLACK_WEBHOOK_URL not found in .env. Skipping Slack alert.")
         return
 
-    message_text = f"""🔔 *New GitHub Issue Drafted for Review*
-*Issue #{issue_number}:* {title}
-*Category:* `{category}` | *Confidence Score:* `{confidence}`
-
-*Draft Response:*
-```{draft}```"""
+    # Visual indicators based on confidence score
+    confidence_icon = "🟢" if confidence >= 0.85 else ("🟡" if confidence >= 0.50 else "🔴")
     
+    message_text = f"""━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🤖 *GITHUB AGENT | NEW TRIAGE DISPATCH*
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📌 *Issue:* `#{issue_number}` — *{title}*
+🏷️ *Category:* `{category.upper()}`
+{confidence_icon} *Confidence:* `{confidence:.2f}` | *Status:* `PENDING_REVIEW`
+
+📋 *AI Drafted Response:*
+```{draft}```
+
+⚙️ *Action Required:*
+Run `python pipeline.py` locally or execute Docker to `[A]pprove`, `[R]eject`, or `[S]kip`.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━"""
+
     response = requests.post(SLACK_WEBHOOK_URL, json={"text": message_text}, timeout=10)
     response.raise_for_status()
-    logger.info(f"✅ Slack alert sent successfully for Issue #{issue_number}")
+    logger.info(f"✅ Formatted Slack card sent successfully for Issue #{issue_number}")
 
 
 @api_retry
@@ -49,9 +60,22 @@ def post_github_comment(issue_number: int, comment_body: str) -> bool:
         logger.error("❌ Missing GITHUB_TOKEN or GITHUB_REPO in environment variables.")
         raise ValueError("GitHub credentials missing.")
 
-    g = Github(GITHUB_TOKEN)
+    # Use Auth.Token (PyGithub v2 pattern) — matches ingest_issues.py
+    auth = Auth.Token(GITHUB_TOKEN)
+    g = Github(auth=auth)
     repo = g.get_repo(GITHUB_REPO)
-    issue = repo.get_issue(number=issue_number)
+
+    # Validate the issue exists before trying to comment on it
+    # This gives a clear diagnostic instead of a cryptic 404
+    try:
+        issue = repo.get_issue(number=issue_number)
+    except Exception as exc:
+        raise ValueError(
+            f"Issue #{issue_number} not found in repo '{GITHUB_REPO}'. "
+            f"Was this a test/dummy record inserted directly into issues.db? "
+            f"GitHub error: {exc}"
+        ) from exc
+
     issue.create_comment(comment_body)
     logger.info(f"✅ Successfully posted comment to live GitHub Issue #{issue_number}")
     return True
@@ -179,6 +203,8 @@ def run_pipeline():
 
     for issue in pending:
         process_issue_with_dlq(issue)
+        # Throttle between issues to avoid GitHub rate limits
+        time.sleep(5)
 
 
 if __name__ == "__main__":
