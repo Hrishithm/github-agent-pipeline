@@ -49,3 +49,15 @@ flowchart TD
         LogFile --> Dashboard
         Docker["Docker Containerization"] -.->|Packages| Dashboard
     end
+```
+## MCP Integration: Decoupled Retrieval Architecture
+
+Documentation retrieval is decoupled from the agent runtime and served via an independent Model Context Protocol (MCP) server (`docs-retriever-mcp`) communicating over `stdio`.
+
+### Architecture Comparison
+* **Previous:** `[LangGraph Agent] ──> Direct Import ──> ChromaDB (In-Process)`
+* **Current:** `[LangGraph Agent] ──> retriever.py (stdio client) ──> [docs-retriever-mcp] ──> ChromaDB`
+
+### Operational Benefits
+* **Lightweight Agent Footprint:** Eliminates client-side dependencies on `chromadb` and embedding frameworks in the agent environment.
+* **Reusable Tooling:** The same retrieval engine serves this triage agent and external desktop assistants (such as Claude Desktop) simultaneously without modifying server logic.
